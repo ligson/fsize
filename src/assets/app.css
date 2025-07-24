@@ -1,0 +1,34 @@
+* {
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    overscroll-behavior: none;
+}
+
+#app {
+    flex: 1;
+    display: flex;
+}
+
+.x-layout, .x-layout .n-layout-scroll-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+
+.x-layout-header, .x-layout-footer {
+    height: 80px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.x-layout-content {
+    flex: 1;
+}

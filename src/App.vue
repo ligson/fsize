@@ -3,12 +3,13 @@ import {onMounted, onUnmounted, ref} from "vue";
 import {darkTheme, GlobalTheme, lightTheme, NLayout} from "naive-ui"
 import {open} from '@tauri-apps/plugin-dialog';
 import FileTree from "./FileTree.vue";
+import {eventBus} from "./component/eventBus.ts";
 
 
 const myTheme = ref<GlobalTheme>(lightTheme);
 const fileTree = ref<any>();
 const currentSelectPath = ref<string>("选择路径:");
-
+const stateMessage = ref<any>()
 const selectFile = async () => {
   const path = await open({
     multiple: false,
@@ -30,8 +31,12 @@ const updateTheme = () => {
   myTheme.value = isDarkMode ? darkTheme : lightTheme;
 };
 
+
 // 在组件挂载时添加监听器
 onMounted(() => {
+  eventBus.on('state-message', (event) => {
+    stateMessage.value = event?.text;
+  });
   updateTheme(); // 初始化主题
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateTheme);
 });
@@ -48,7 +53,7 @@ onUnmounted(() => {
       <n-dialog-provider>
         <n-layout class="x-layout">
           <n-layout-header class="x-layout-header">
-            <n-space vertical>
+            <n-space vertical style="flex: 1;padding: 10px;">
               <n-button type="primary" @click="selectFile">选择文件</n-button>
               <n-tag type="warning">{{ currentSelectPath }}</n-tag>
             </n-space>
@@ -56,7 +61,7 @@ onUnmounted(() => {
           <n-layout-content class="x-layout-content">
             <FileTree ref="fileTree"/>
           </n-layout-content>
-          <n-layout-footer class="x-layout-footer">footer</n-layout-footer>
+          <n-layout-footer class="x-layout-footer">{{ stateMessage }}</n-layout-footer>
         </n-layout>
       </n-dialog-provider>
     </n-message-provider>
@@ -64,37 +69,5 @@ onUnmounted(() => {
 </template>
 
 <style>
-* {
-  margin: 0;
-  padding: 0;
-}
-
-html, body {
-  width: 100%;
-  height: 100%;
-  display: flex;
-}
-
-#app {
-  flex: 1;
-  display: flex;
-}
-
-.x-layout, .x-layout .n-layout-scroll-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-
-.x-layout-header, .x-layout-footer {
-  height: 80px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.x-layout-content {
-  flex: 1;
-}
+@import "./assets/app.css";
 </style>

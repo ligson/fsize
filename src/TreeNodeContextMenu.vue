@@ -19,7 +19,8 @@ const clickOutside = () => {
 }
 const dropdownOptions = [
   {label: '刷新', key: 'refresh'},
-  {label: '删除', key: 'delete'}];
+  {label: '删除', key: 'delete'},
+  {label: '打开', key: 'open'}];
 
 const showContextMenu = (event: MouseEvent) => {
   event.preventDefault()

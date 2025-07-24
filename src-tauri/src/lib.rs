@@ -14,6 +14,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             commands::file_size::file_size,
+            commands::file_open::open_folder,
             commands::file_delete::file_delete,
         ])
         .run(tauri::generate_context!())

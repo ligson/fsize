@@ -4,7 +4,8 @@ import {invoke} from "@tauri-apps/api/core";
 import {TreeOption, useDialog, useMessage} from "naive-ui";
 import TreeNodeContextMenu from "./TreeNodeContextMenu.vue";
 import {listen} from '@tauri-apps/api/event';
-
+import {eventBus} from "./component/eventBus.ts";
+import {MyTool} from "./util/MyTool.ts";
 
 const treeData = ref<TreeNode[]>([]);
 
@@ -15,6 +16,7 @@ const treeNodeContextMenuRef = ref<any>();
 const treeLoading = ref<boolean>(false);
 const dialog = useDialog()
 
+
 interface TreeNode {
   label: string;
   key: string;
@@ -24,32 +26,15 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
-const formatSize = (size: number): string => {
-  if (size === 0) {
-    return '0 B';
-  }
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-  let i = Math.floor(Math.log(size) / Math.log(1024));
-
-  // 调整 i 的值以满足你的显示要求
-  if (i >= 3) { // 如果 size 大于等于 GB 的大小，则显示为 MB
-    i = 2;
-  } else if (i >= 2) { // 如果 size 大于等于 MB 的大小但小于 GB，则显示为 MB
-    i = 2;
-  } else if (i >= 1) { // 如果 size 大于等于 KB 的大小但小于 MB，则显示为 KB
-    i = 1;
-  }
-
-  return `${(size / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
-}
 
 const convertToTree = async (node: any): Promise<TreeNode> => {
-  const label: string = "[" + formatSize(node.size) + "]-" + node.name;
+
+  const label: string = (node.is_dir ? "📂" : "🗒") + "[" + MyTool.formatSize(node.size) + "]-" + node.name;
   const isDirectory: boolean = node.is_dir;
 
   let children: TreeNode[] | undefined = undefined;
   if (node.children) {
-    children = await Promise.all(Object.values(node.children).map(convertToTree));
+    children = await Promise.all(node.children.map(convertToTree));
   }
 
   const treeNode: TreeNode = {
@@ -82,18 +67,30 @@ listen('file_size_result', (event) => {
   const payload = event.payload as string | { error: string };
   processTreeData(payload).then(_ => {
     treeLoading.value = false;
+    eventBus.emit("state-message", {text: "加载目录成功：" + currentPath.value});
   })
 
 });
+
+listen('file_size_result_error', (event) => {
+  const payload = event.payload as string | { error: string };
+  treeLoading.value = false;
+  eventBus.emit("state-message", {text: "加载目录失败：" + currentPath.value + "," + payload});
+});
+
 listen('file_deleted', (_) => {
+  treeLoading.value = false;
   message.success("删除" + currentSelectPath.value + "成功")
+  eventBus.emit("state-message", {text: "删除文件成功：" + currentSelectPath.value});
   selectPath(currentPath.value)
 })
 listen('file_deleted_error', (event) => {
+  treeLoading.value = false;
   const payload = event.payload as string | { error: string };
   message.error("删除" + currentSelectPath.value + "失败:" + payload)
 })
 const selectPath = (path: string) => {
+  eventBus.emit("state-message", {text: "正在加载目录：" + path});
   currentPath.value = path;
   treeData.value = [];
   console.log(new Date().toLocaleString())
@@ -129,6 +126,8 @@ const fileDeleteClick = () => {
     positiveText: '确定',
     negativeText: '不确定',
     onPositiveClick: () => {
+      treeLoading.value = true;
+      eventBus.emit("state-message", {text: "正在删除文件：" + currentSelectPath.value});
       invoke('file_delete', {path: currentSelectPath.value})
     }
   })
@@ -138,6 +137,8 @@ const selectMenu = (item: string) => {
     selectPath(currentPath.value);
   } else if (item === "delete") {
     fileDeleteClick();
+  } else if (item === "open") {
+    invoke('open_folder', {path: currentSelectPath.value});
   }
 }
 
