@@ -1,83 +1,122 @@
-# fsize
+<div align="center">
+  <img src="public/app-icon.svg" width="96" height="96" alt="fsize 图标">
+  <h1>fsize</h1>
+  <p>本地优先的跨平台目录空间分析工具</p>
 
-`fsize` 是一个用于查看磁盘目录占用情况的桌面应用。选择一个目录后，应用会递归统计其中的文件大小，并以树形结构展示目录和文件，帮助快速定位占用空间较大的内容。
+  <p>
+    <img alt="版本 0.2.2" src="https://img.shields.io/badge/version-0.2.2-17836f?style=flat-square">
+    <a href="https://github.com/ligson/fsize/releases/latest"><img alt="GitHub 最新版本" src="https://img.shields.io/github/v/release/ligson/fsize?style=flat-square"></a>
+  </p>
 
-当前版本：**0.2.0**。每个版本的功能和修复记录见 [CHANGELOG.md](CHANGELOG.md)。
+  <p>
+    <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white&style=flat-square">
+    <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-42B883?logo=vuedotjs&logoColor=white&style=flat-square">
+    <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white&style=flat-square">
+    <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-CE422B?logo=rust&logoColor=white&style=flat-square">
+    <img alt="Naive UI" src="https://img.shields.io/badge/UI-Naive%20UI-18A058?style=flat-square">
+    <img alt="Vite" src="https://img.shields.io/badge/Vite-6-646CFF?logo=vite&logoColor=white&style=flat-square">
+  </p>
+</div>
 
-## 功能
+`fsize` 是一个运行在本机的桌面目录空间分析器。选择目录后，它会递归统计文件与各级目录的大小，以树形视图和搜索结果帮助你找出占用空间较大的内容；文件数据留在本地，不需要上传到云端服务。
 
-- 通过系统目录选择窗口选择要分析的目录。
-- 递归扫描目录，计算文件大小以及各级目录的累计大小。
-- 使用可复用的 Rayon 线程池并行扫描较大的目录树，工作线程数限制为 2–8；小目录保持顺序遍历以减少并行调度开销。
-- 在树形视图中展示条目名称、类型和大小；每一级的内容按大小从大到小排列。
-- 扫描完成后建立本次会话的内存文件索引，可按文件名或完整路径搜索，结果显示所在位置、大小，并支持在系统文件管理器中定位。
-- 可在树节点或搜索结果中勾选项目，然后批量删除或移动；删除前确认，移动不覆盖目标目录里的同名项目。
-- 遇到无权读取的文件或目录时保留该条目并继续扫描；无法完整统计的目录会标记为部分结果。
-- 通过右键菜单刷新扫描结果、在系统文件管理器中打开路径，或删除选中的文件、目录。
-- 通过顶部齿轮按钮打开设置，选择两种浅色和两种深色预设主题，选择会保存在本地并在下次启动时恢复。
-- 顶部工具栏提供目录选择和设置入口；结果区上方集中放置搜索框与批量操作，搜索结果独占列表区域。
-- 文件树使用 Naive UI 自绘滚动条，颜色跟随当前主题；窗口页面不显示系统滚动条。
+## 项目状态
 
-扫描时会跳过符号链接，以避免重复遍历链接目标。删除目录会递归删除该目录及其所有内容，请在确认后操作。
+当前版本为 **0.2.2**。目录扫描、文件搜索、系统文件管理器定位、批量删除与移动等核心流程均可使用。项目仍在持续完善中，欢迎通过 Issue 反馈问题和改进建议。
 
-## 技术架构
+## 核心能力
 
-应用采用 Tauri 2 桌面架构，前端负责交互和结果展示，Rust 后端负责文件系统操作：
+- **目录空间统计**：递归计算文件大小和目录累计大小，条目按大小降序排列。
+- **并行扫描**：Rust 后端使用可复用的 Rayon 线程池并行处理较大的目录，限制为 2–8 个工作线程。
+- **文件搜索**：每次扫描后建立会话内存索引，可按文件名或完整路径搜索，并查看位置和大小。
+- **快速定位**：在 Windows Explorer、macOS Finder 或 Linux 文件管理器中显示对应路径。
+- **批量管理**：从目录树或搜索结果选择项目，批量删除或移动；移动不会覆盖目标目录中的同名项目。
+- **部分结果可见**：无权读取的条目仍显示在列表中；无法完整统计的目录会标记为部分结果，实际操作时再报告权限错误。
+- **桌面主题**：预置两种亮色和两种暗色主题，选择保存在本机；滚动条颜色随主题变化。
 
-- **前端**：Vue 3、TypeScript、Vite、Naive UI。
-- **桌面容器与系统集成**：Tauri 2，以及 Dialog、Filesystem、Opener 插件。
-- **后端**：Rust；通过 Tauri Commands 提供目录统计、打开路径和删除路径功能。
-- **前后端通信**：前端通过 Tauri `invoke` 调用命令；耗时的目录扫描和删除操作通过 Tauri 事件返回最终结果或错误状态。目录扫描目前没有逐文件进度事件。
+扫描会跳过符号链接，不跟随链接遍历目标。文件大小按文件逻辑长度统计，不等于文件系统实际分配空间。搜索索引只在当前应用会话中保留，刷新或重新扫描后重建。删除目录会递归删除其全部内容，执行前会要求确认。
 
-## 开发环境
+## 架构
 
-需要安装 Node.js、pnpm、Rust 工具链，以及 Tauri 2 在目标操作系统所需的系统依赖。详细的平台依赖可参考 [Tauri 前置条件](https://v2.tauri.app/start/prerequisites/)。
-
-安装前端依赖：
-
-```bash
-pnpm install
+```mermaid
+flowchart LR
+    U[用户选择目录] --> V[Vue 3 桌面界面]
+    V -->|Tauri invoke| C[Rust Commands]
+    C --> R[Rayon 并行目录扫描]
+    R -->|扫描结果事件| V
+    V --> I[会话内存文件索引]
+    I --> S[搜索、定位与批量操作]
+    S -->|Tauri invoke| C
+    C --> F[本机文件系统]
 ```
 
-启动桌面应用开发模式：
+## 技术栈
+
+| 层级 | 技术 | 用途 |
+| --- | --- | --- |
+| 桌面容器 | Tauri 2 | 原生窗口、插件与系统集成 |
+| 前端 | Vue 3、TypeScript、Vite | 桌面工作区和交互逻辑 |
+| UI | Naive UI | 控件、树形视图、对话框与主题 |
+| 后端 | Rust | 文件遍历、大小统计和文件操作 |
+| 并行处理 | Rayon | 大型目录树的并行扫描 |
+| 前后端通信 | Tauri Commands、Events | 调用系统操作并接收异步扫描结果 |
+
+## 下载
+
+从 [GitHub Releases](https://github.com/ligson/fsize/releases/latest) 下载适合平台的安装包。当前 Release 提供 Windows x64 安装程序、Linux x64 的 AppImage/deb/rpm，以及 macOS ARM64 安装包。macOS 构建暂未配置 Apple Developer 签名与公证。
+
+## 快速开始
+
+### 环境要求
+
+- Node.js 与 pnpm
+- Rust stable 工具链
+- Tauri 2 在目标操作系统所需的系统依赖，详见 [Tauri 前置条件](https://v2.tauri.app/start/prerequisites/)
+
+### 启动桌面开发版
 
 ```bash
+git clone https://github.com/ligson/fsize.git
+cd fsize
+pnpm install
 pnpm tauri dev
 ```
 
-只构建并检查前端：
+### 构建与检查
 
 ```bash
+pnpm install --frozen-lockfile
 pnpm build
-```
-
-构建当前平台的桌面安装包：
-
-```bash
 pnpm tauri build
 ```
 
-项目中的 `build.sh` 另外提供了使用 `cargo-xwin` 交叉构建 Windows 和 macOS 目标的命令。跨平台构建需要安装相应的 Rust target 和 `cargo-xwin`，并满足目标平台的构建要求。
+`pnpm build` 执行 TypeScript 类型检查和前端生产构建。`pnpm tauri build` 构建当前主机平台的桌面安装包。发版标签和 GitHub Actions 流程见[开发文档](docs/development.md#github-自动发布)。
 
 ## 项目结构
 
 ```text
-src/                         Vue 前端
-  App.vue                    应用布局、主题和目录选择
-  FileTree.vue               文件树、操作菜单及前后端交互
-  TreeNodeContextMenu.vue    文件树右键菜单
-  util/MyTool.ts             文件大小格式化工具
-src-tauri/                   Tauri 与 Rust 后端
-  src/commands/file_size.rs  递归扫描与目录大小统计
-  src/commands/file_open.rs  使用系统文件管理器打开路径
-  src/commands/file_delete.rs 删除文件或目录
+fsize/
+├── .github/workflows/       GitHub Actions 发布工作流
+├── docs/                    架构与开发文档
+├── public/app-icon.svg      应用图标源文件
+├── src/                     Vue 前端
+│   ├── App.vue              主窗口布局与主题设置
+│   ├── FileTree.vue         文件树、搜索和批量操作
+│   └── assets/app.css       主题与界面样式
+├── src-tauri/               Tauri 配置与 Rust 后端
+│   └── src/commands/        扫描、定位、删除与移动命令
+├── AGENTS.md                仓库协作约定
+├── CHANGELOG.md             版本变更记录
+└── README.md
 ```
 
-## 开发文档
+## 文档
 
 - [工程架构与功能上下文](docs/architecture.md)
-- [开发与构建说明](docs/development.md)
-- [仓库协作约定](AGENTS.md)
+- [开发、构建与发版说明](docs/development.md)
 - [版本更新日志](CHANGELOG.md)
+- [仓库协作约定](AGENTS.md)
 
-推送与当前版本匹配的 `v*` 标签会触发 GitHub Actions，在 Windows、macOS 和 Ubuntu 上构建安装包并创建 GitHub Release。具体发版步骤见[开发文档](docs/development.md#github-自动发布)。
+## 参与贡献
+
+欢迎提交 Issue 和 Pull Request。提交前请阅读 [AGENTS.md](AGENTS.md)，涉及功能或架构的变动请同步更新相应文档；代码或用户可见行为的变化应记录在 `CHANGELOG.md`。
