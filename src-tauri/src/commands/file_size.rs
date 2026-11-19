@@ -1,18 +1,37 @@
-// 在文件顶部添加
-use serde::{Deserialize, Serialize};
-use std::backtrace::Backtrace;
+// Directory scans use a shared, bounded worker pool.
+use rayon::prelude::*;
+use serde::Serialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::thread;
 use tauri::{command, AppHandle, Emitter};
 
-#[derive(Serialize, Deserialize, Debug)]
+static SCAN_POOL: OnceLock<Option<rayon::ThreadPool>> = OnceLock::new();
+
+fn scan_pool() -> Option<&'static rayon::ThreadPool> {
+    SCAN_POOL
+        .get_or_init(|| {
+            let worker_count = thread::available_parallelism()
+                .map(|count| count.get().clamp(2, 8))
+                .unwrap_or(4);
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(worker_count)
+                .build()
+                .ok()
+        })
+        .as_ref()
+}
+
+#[derive(Serialize, Debug)]
 struct Node {
     name: String,
     path: String, // 增加 path 字段
     size: u64,
     is_dir: bool,
     children: Vec<Node>,
+    readable: bool,
+    complete: bool,
 }
 
 #[command]
@@ -31,20 +50,15 @@ pub fn file_size(path: String, app_handle: AppHandle) {
             size: 0,
             is_dir: path.is_dir(),
             children: Vec::new(),
+            readable: true,
+            complete: true,
         };
 
-        let result = match traverse_directory(&path, &mut root) {
-            Ok(_) => serde_json::to_string(&root).map_err(|e| e.to_string()),
-            Err(e) => {
-                let bt = Backtrace::capture();
-                println!("stack:\n{}", bt);
-                Err(format!(
-                    "Error traversing directory: {},err:{}",
-                    path.to_string_lossy().to_string(),
-                    e
-                ))
-            }
-        };
+        match scan_pool() {
+            Some(pool) => pool.install(|| traverse_directory(&path, &mut root)),
+            None => traverse_directory(&path, &mut root),
+        }
+        let result = serde_json::to_string(&root).map_err(|e| e.to_string());
 
         match result {
             Ok(json_result) => {
@@ -64,28 +78,64 @@ pub fn file_size(path: String, app_handle: AppHandle) {
         }
     });
 }
-fn traverse_directory(path: &Path, node: &mut Node) -> std::io::Result<()> {
-    if !path.is_dir() {
-        node.size = path.metadata()?.len();
-        return Ok(());
+fn traverse_directory(path: &Path, node: &mut Node) {
+    if !node.is_dir {
+        match path.metadata() {
+            Ok(metadata) => node.size = metadata.len(),
+            Err(_) => {
+                node.readable = false;
+                node.complete = false;
+            }
+        }
+        return;
     }
-    let result = fs::read_dir(path);
-    if result.is_err() {
-        return Err(result.unwrap_err());
-    }
-    let entries: Vec<_> = result?.collect();
-    let mut temp_children = Vec::new();
 
-    // 第一阶段：收集子节点并计算 size
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(_) => {
+            node.readable = false;
+            node.complete = false;
+            return;
+        }
+    };
+    let mut temp_children = Vec::new();
+    let mut complete = true;
+
+    // Keep entries whose metadata or contents cannot be read so users can still act on them.
     for entry in entries {
-        let entry = entry?;
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => {
+                complete = false;
+                continue;
+            }
+        };
         let path = entry.path();
-        if path.is_symlink() {
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(_) => {
+                complete = false;
+                temp_children.push(Node {
+                    name: path
+                        .file_name()
+                        .unwrap_or_else(|| path.as_os_str())
+                        .to_string_lossy()
+                        .to_string(),
+                    path: path.to_string_lossy().to_string(),
+                    size: 0,
+                    is_dir: false,
+                    children: Vec::new(),
+                    readable: false,
+                    complete: false,
+                });
+                continue;
+            }
+        };
+        if file_type.is_symlink() {
             continue;
         }
 
-        // 创建基础节点
-        let mut child_node = Node {
+        let child_node = Node {
             name: path
                 .file_name()
                 .unwrap_or_else(|| path.as_os_str())
@@ -93,26 +143,33 @@ fn traverse_directory(path: &Path, node: &mut Node) -> std::io::Result<()> {
                 .to_string(),
             path: path.to_string_lossy().to_string(),
             size: 0,
-            is_dir: path.is_dir(),
+            is_dir: file_type.is_dir(),
             children: Vec::new(),
+            readable: true,
+            complete: true,
         };
 
-        // 递归遍历或获取文件 size
-        if child_node.is_dir {
-            traverse_directory(&path, &mut child_node)?;
-        } else {
-            child_node.size = path.metadata()?.len();
-        }
-
-        node.size += child_node.size;
         temp_children.push(child_node);
     }
 
-    // 第二阶段：排序当前层级的子节点
+    if temp_children.len() >= 8 {
+        temp_children.par_iter_mut().for_each(|child| {
+            let child_path = PathBuf::from(&child.path);
+            traverse_directory(&child_path, child);
+        });
+    } else {
+        for child in &mut temp_children {
+            let child_path = PathBuf::from(&child.path);
+            traverse_directory(&child_path, child);
+        }
+    }
+
+    for child in &temp_children {
+        complete &= child.complete;
+        node.size = node.size.saturating_add(child.size);
+    }
+
     temp_children.sort_by(|a, b| b.size.cmp(&a.size));
-
-    // 第三阶段：存入父节点
     node.children = temp_children;
-
-    Ok(())
+    node.complete = complete;
 }

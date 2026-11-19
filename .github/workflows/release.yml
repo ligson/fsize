@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    name: Build (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            args: ""
+          - platform: windows-latest
+            args: ""
+          - platform: macos-latest
+            args: ""
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libfuse2 \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            wget \
+            libxdo-dev
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify release version and notes
+        id: release-notes
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const tag = process.env.GITHUB_REF_NAME;
+          const version = tag.replace(/^v/, '');
+          if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) {
+            throw new Error(`Invalid release tag: ${tag}`);
+          }
+
+          const packageVersion = require('./package.json').version;
+          const tauriVersion = require('./src-tauri/tauri.conf.json').version;
+          const cargoToml = fs.readFileSync('src-tauri/Cargo.toml', 'utf8');
+          const cargoVersion = cargoToml.match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+          for (const [name, actual] of Object.entries({ packageVersion, tauriVersion, cargoVersion })) {
+            if (actual !== version) throw new Error(`${name} is ${actual}, but tag is ${tag}`);
+          }
+
+          const changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          const heading = `## [${version}]`;
+          const start = changelog.indexOf(heading);
+          if (start < 0) throw new Error(`CHANGELOG.md has no entry for ${version}`);
+          const next = changelog.indexOf('\n## ', start + heading.length);
+          const body = changelog.slice(start, next < 0 ? undefined : next).trim();
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `body<<RELEASE_NOTES\n${body}\nRELEASE_NOTES\n`);
+          NODE
+
+      - name: Build and publish release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: fsize ${{ github.ref_name }}
+          releaseBody: ${{ steps.release-notes.outputs.body }}
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          args: ${{ matrix.args }}

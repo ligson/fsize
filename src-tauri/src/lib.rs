@@ -15,7 +15,10 @@ pub fn run() {
             greet,
             commands::file_size::file_size,
             commands::file_open::open_folder,
+            commands::file_open::reveal_path,
             commands::file_delete::file_delete,
+            commands::file_batch::file_delete_many,
+            commands::file_batch::file_move_many,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

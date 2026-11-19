@@ -1,153 +1,349 @@
 <script lang="ts" setup>
-import {ref} from "vue";
+import {computed, h, ref} from "vue";
 import {invoke} from "@tauri-apps/api/core";
-import {TreeOption, useDialog, useMessage} from "naive-ui";
+import {listen} from "@tauri-apps/api/event";
+import {NCheckbox, NIcon, TreeOption, useDialog, useMessage} from "naive-ui";
+import {DocumentTextOutline, FolderOpenOutline, FolderOutline, LockClosedOutline, SearchOutline} from "@vicons/ionicons5";
+import {open} from "@tauri-apps/plugin-dialog";
 import TreeNodeContextMenu from "./TreeNodeContextMenu.vue";
-import {listen} from '@tauri-apps/api/event';
 import {eventBus} from "./component/eventBus.ts";
 import {MyTool} from "./util/MyTool.ts";
 
-const treeData = ref<TreeNode[]>([]);
-
-const currentSelectPath = ref<string | number | undefined>('');
-const currentPath = ref<string>("");
-const message = useMessage();
-const treeNodeContextMenuRef = ref<any>();
-const treeLoading = ref<boolean>(false);
-const dialog = useDialog()
-
-
-interface TreeNode {
+interface TreeNode extends TreeOption {
   label: string;
   key: string;
-  type: 'directory' | 'file';
-  icon: string; // 添加图标字段
-  expandable: boolean; // 添加是否可展开字段
+  type: "directory" | "file";
+  readable: boolean;
+  complete: boolean;
+  size: number;
+  sizeLabel: string;
+  searchable: string;
   children?: TreeNode[];
 }
 
+interface FileSizeNode {
+  name: string;
+  path: string;
+  size: number;
+  is_dir: boolean;
+  children: FileSizeNode[];
+  readable: boolean;
+  complete: boolean;
+}
 
-const convertToTree = async (node: any): Promise<TreeNode> => {
+const treeData = ref<TreeNode[]>([]);
+const selectedKeys = ref<Array<string | number>>([]);
+const currentSelectPath = ref("");
+const currentPath = ref("");
+const message = useMessage();
+const dialog = useDialog();
+const treeNodeContextMenuRef = ref<InstanceType<typeof TreeNodeContextMenu> | null>(null);
+const treeLoading = ref(false);
+const itemCount = ref(0);
+const incompleteCount = ref(0);
+const searchText = ref("");
+const selectedPaths = ref<string[]>([]);
+const flatIndex = ref<TreeNode[]>([]);
 
-  const label: string = (node.is_dir ? "📂" : "🗒") + "[" + MyTool.formatSize(node.size) + "]-" + node.name;
-  const isDirectory: boolean = node.is_dir;
-
-  let children: TreeNode[] | undefined = undefined;
-  if (node.children) {
-    children = await Promise.all(node.children.map(convertToTree));
-  }
-
-  const treeNode: TreeNode = {
-    label: label,
-    key: node.path,
-    type: isDirectory ? 'directory' : 'file',
-    icon: isDirectory ? 'folder-icon' : 'file-icon', // 设置不同的图标
-    expandable: isDirectory, // 只有目录可以展开
-    children: children
-  };
-  return treeNode;
+const buildIndex = (node: TreeNode, result: TreeNode[] = []) => {
+  if (node.type === "file") result.push(node);
+  for (const child of node.children ?? []) buildIndex(child, result);
+  return result;
 };
 
-const processTreeData = async (fileSizeResult: any) => {
-  console.log(typeof fileSizeResult)
-  console.log(new Date().toLocaleString())
-  if (typeof fileSizeResult === 'string') {
-    const result = JSON.parse(fileSizeResult);
-    convertToTree(result).then(treeNode => {
-      treeData.value = [treeNode];
+const searchResults = computed(() => {
+  const query = searchText.value.trim().toLocaleLowerCase();
+  if (!query) return [];
+  return flatIndex.value.filter(node => node.searchable.includes(query)).slice(0, 1000);
+});
+
+const togglePath = (path: string, checked: boolean) => {
+  selectedPaths.value = checked
+    ? [...new Set([...selectedPaths.value, path])]
+    : selectedPaths.value.filter(item => item !== path);
+};
+
+const renderPrefix = ({option}: {option: TreeOption}) => {
+  const node = option as TreeNode;
+  const icon = !node.readable ? LockClosedOutline : node.type === "directory" ? FolderOutline : DocumentTextOutline;
+  return h(NIcon, {class: ["tree-kind-icon", !node.readable && "tree-kind-icon-muted"]}, {default: () => h(icon)});
+};
+
+const renderSuffix = ({option}: {option: TreeOption}) => {
+  const node = option as TreeNode;
+  return h("div", {class: "tree-node-suffix"}, [
+    h("span", {class: ["tree-node-size", !node.complete && "tree-node-size-incomplete"]}, node.sizeLabel),
+    h(NCheckbox, {
+      checked: selectedPaths.value.includes(node.key),
+      "aria-label": `选择 ${node.label}`,
+      onUpdateChecked: (checked: boolean) => togglePath(node.key, checked),
+      onClick: (event: MouseEvent) => event.stopPropagation()
+    })
+  ]);
+};
+
+const convertToTree = (node: FileSizeNode): TreeNode => {
+  const sizeLabel = !node.readable
+    ? "不可读取"
+    : `${node.complete ? "" : "部分 "}${MyTool.formatSize(node.size)}`;
+  return {
+    label: node.name,
+    key: node.path,
+    isLeaf: !node.is_dir || node.children.length === 0,
+    type: node.is_dir ? "directory" : "file",
+    size: node.size,
+    sizeLabel,
+    searchable: `${node.name} ${node.path}`.toLocaleLowerCase(),
+    readable: node.readable,
+    complete: node.complete,
+    children: node.children.map(convertToTree)
+  };
+};
+
+const countNodes = (node: TreeNode): {total: number; incomplete: number} => {
+  const childCounts = (node.children ?? []).map(countNodes);
+  return {
+    total: 1 + childCounts.reduce((sum, item) => sum + item.total, 0),
+    incomplete: Number(!node.complete) + childCounts.reduce((sum, item) => sum + item.incomplete, 0)
+  };
+};
+
+const processTreeData = (payload: unknown) => {
+  if (typeof payload !== "string") throw new Error("扫描结果格式无效");
+  const result = JSON.parse(payload) as FileSizeNode;
+  const root = convertToTree(result);
+  treeData.value = [root];
+  flatIndex.value = buildIndex(root);
+  selectedPaths.value = [];
+  selectedKeys.value = [root.key];
+  const counts = countNodes(root);
+  itemCount.value = counts.total;
+  incompleteCount.value = counts.incomplete;
+};
+
+listen("file_size_result", (event) => {
+  try {
+    processTreeData(event.payload);
+    eventBus.emit("state-message", {
+      text: incompleteCount.value
+        ? `扫描完成：${itemCount.value} 项，${incompleteCount.value} 项未能完整读取`
+        : `扫描完成：${itemCount.value} 项`
     });
-  } else {
-    console.error('Error:', fileSizeResult);
-  }
-}
-
-
-// 监听 file_size_result 事件
-listen('file_size_result', (event) => {
-  const payload = event.payload as string | { error: string };
-  processTreeData(payload).then(_ => {
+  } catch (error) {
+    treeData.value = [];
+    message.error(`处理扫描结果失败：${String(error)}`);
+    eventBus.emit("state-message", {text: "处理扫描结果失败"});
+  } finally {
     treeLoading.value = false;
-    eventBus.emit("state-message", {text: "加载目录成功：" + currentPath.value});
-  })
-
+  }
 });
 
-listen('file_size_result_error', (event) => {
-  const payload = event.payload as string | { error: string };
+listen("file_size_result_error", (event) => {
   treeLoading.value = false;
-  eventBus.emit("state-message", {text: "加载目录失败：" + currentPath.value + "," + payload});
+  eventBus.emit("state-message", {text: `扫描失败：${String(event.payload)}`});
 });
 
-listen('file_deleted', (_) => {
+listen("file_deleted", () => {
   treeLoading.value = false;
-  message.success("删除" + currentSelectPath.value + "成功")
-  eventBus.emit("state-message", {text: "删除文件成功：" + currentSelectPath.value});
-  selectPath(currentPath.value)
-})
-listen('file_deleted_error', (event) => {
+  message.success("删除成功");
+  eventBus.emit("state-message", {text: `已删除：${currentSelectPath.value}`});
+  selectPath(currentPath.value);
+});
+
+listen("file_deleted_error", (event) => {
   treeLoading.value = false;
-  const payload = event.payload as string | { error: string };
-  message.error("删除" + currentSelectPath.value + "失败:" + payload)
-})
+  message.error(String(event.payload));
+});
+
 const selectPath = (path: string) => {
-  eventBus.emit("state-message", {text: "正在加载目录：" + path});
+  if (!path) return;
   currentPath.value = path;
   treeData.value = [];
-  console.log(new Date().toLocaleString())
+  itemCount.value = 0;
+  incompleteCount.value = 0;
+  flatIndex.value = [];
+  selectedPaths.value = [];
   treeLoading.value = true;
-  // 调用 read_file 命令
-  invoke('file_size', {path: path})
-      .then(fileSizeResult => {
-        console.log(fileSizeResult);
-      })
-      .catch(err => console.error(err));
-}
+  eventBus.emit("state-message", {text: `正在扫描：${path}`});
+  invoke("file_size", {path}).catch((error) => {
+    treeLoading.value = false;
+    message.error(`启动扫描失败：${String(error)}`);
+    eventBus.emit("state-message", {text: "启动扫描失败"});
+  });
+};
 
-
-const nodeProps = ({option}: { option: TreeOption }) => {
-  return {
-    onClick() {
-      console.log(message)
-      message.info("[Click]" + option.label)
-    },
-    onContextmenu(e: MouseEvent): void {
-      currentSelectPath.value = option.key
-      if (treeNodeContextMenuRef.value) {
-        treeNodeContextMenuRef.value.showContextMenu(e)
-      }
-
-    }
+const nodeProps = ({option}: {option: TreeOption}) => ({
+  onClick() {
+    const node = option as TreeNode;
+    currentSelectPath.value = node.key;
+    selectedKeys.value = [node.key];
+  },
+  onContextmenu(event: MouseEvent) {
+    event.preventDefault();
+    const node = option as TreeNode;
+    currentSelectPath.value = node.key;
+    selectedKeys.value = [node.key];
+    treeNodeContextMenuRef.value?.showContextMenu(event);
   }
-}
+});
+
 const fileDeleteClick = () => {
   dialog.warning({
-    title: '确认删除',
-    content: '确认删除文件：' + currentSelectPath.value,
-    positiveText: '确定',
-    negativeText: '不确定',
+    title: "确认删除",
+    content: `确认删除此项及其内容？\n${currentSelectPath.value}`,
+    positiveText: "删除",
+    negativeText: "取消",
     onPositiveClick: () => {
       treeLoading.value = true;
-      eventBus.emit("state-message", {text: "正在删除文件：" + currentSelectPath.value});
-      invoke('file_delete', {path: currentSelectPath.value})
+      eventBus.emit("state-message", {text: `正在删除：${currentSelectPath.value}`});
+      invoke("file_delete", {path: currentSelectPath.value}).catch((error) => {
+        treeLoading.value = false;
+        message.error(String(error));
+      });
     }
-  })
-}
-const selectMenu = (item: string) => {
-  if (item === "refresh") {
-    selectPath(currentPath.value);
-  } else if (item === "delete") {
-    fileDeleteClick();
-  } else if (item === "open") {
-    invoke('open_folder', {path: currentSelectPath.value});
-  }
-}
+  });
+};
 
-defineExpose({selectPath})
+const showBatchResult = (result: {succeeded: string[]; failed: Array<{path: string; error: string}>}) => {
+  selectedPaths.value = [];
+  treeLoading.value = false;
+  const summary = `${result.succeeded.length} 项成功，${result.failed.length} 项失败`;
+  if (result.failed.length) {
+    message.warning(`${summary}：${result.failed[0].error}`);
+  } else {
+    message.success(summary);
+  }
+  eventBus.emit("state-message", {text: summary});
+  selectPath(currentPath.value);
+};
+
+const deleteSelected = () => {
+  if (!selectedPaths.value.length) return;
+  const paths = [...selectedPaths.value];
+  dialog.warning({
+    title: "确认批量删除",
+    content: `将永久删除 ${paths.length} 个项目及所选目录中的全部内容，是否继续？`,
+    positiveText: "删除",
+    negativeText: "取消",
+    onPositiveClick: async () => {
+      treeLoading.value = true;
+      try {
+        const result = await invoke<{succeeded: string[]; failed: Array<{path: string; error: string}>}>("file_delete_many", {paths});
+        showBatchResult(result);
+      } catch (error) {
+        treeLoading.value = false;
+        message.error(String(error));
+      }
+    }
+  });
+};
+
+const moveSelected = async () => {
+  if (!selectedPaths.value.length) return;
+  try {
+    const destination = await open({multiple: false, directory: true, title: "选择移动目标目录"});
+    if (typeof destination !== "string" || !destination) return;
+    treeLoading.value = true;
+    const result = await invoke<{succeeded: string[]; failed: Array<{path: string; error: string}>}>("file_move_many", {
+      paths: [...selectedPaths.value],
+      destination
+    });
+    showBatchResult(result);
+  } catch (error) {
+    treeLoading.value = false;
+    message.error(String(error));
+  }
+};
+
+const revealPath = async (path: string) => {
+  try {
+    await invoke("reveal_path", {path});
+  } catch (error) {
+    message.error(String(error));
+  }
+};
+
+const selectMenu = (item: string) => {
+  if (item === "refresh") selectPath(currentPath.value);
+  if (item === "delete") fileDeleteClick();
+  if (item === "reveal") revealPath(currentSelectPath.value);
+  if (item === "open") {
+    invoke("open_folder", {path: currentSelectPath.value}).catch((error) => message.error(String(error)));
+  }
+};
+
+const isEmpty = computed(() => treeData.value.length === 0);
+
+defineExpose({selectPath});
 </script>
+
 <template>
-  <n-spin :show="treeLoading">
-    <n-tree :data="treeData" block-line :node-props="nodeProps"
-    />
-    <TreeNodeContextMenu ref="treeNodeContextMenuRef" @select="selectMenu"/>
-  </n-spin>
+  <div class="tree-region">
+    <div class="tree-actions">
+      <n-input v-model:value="searchText" clearable placeholder="搜索文件名或路径" size="small">
+        <template #prefix><n-icon><SearchOutline /></n-icon></template>
+      </n-input>
+      <span class="selection-count">已选 {{ selectedPaths.length }} 项</span>
+      <n-button size="small" secondary :disabled="!selectedPaths.length" @click="moveSelected">移动</n-button>
+      <n-button size="small" type="error" secondary :disabled="!selectedPaths.length" @click="deleteSelected">删除</n-button>
+    </div>
+    <div v-if="searchText.trim()" class="search-results">
+      <div class="search-columns">
+        <span>文件与位置</span>
+        <span>大小</span>
+      </div>
+      <n-scrollbar trigger="none">
+        <n-empty v-if="!searchResults.length" description="没有匹配的文件" size="small" />
+        <div v-for="node in searchResults" :key="node.key" class="search-result-row">
+          <n-checkbox
+            :checked="selectedPaths.includes(node.key)"
+            :aria-label="`选择 ${node.label}`"
+            @update:checked="checked => togglePath(node.key, checked)"
+          />
+          <div class="search-result-copy" :title="node.key">
+            <strong>{{ node.label }}</strong>
+            <span>{{ node.key }}</span>
+          </div>
+          <span class="tree-node-size">{{ node.sizeLabel }}</span>
+          <n-button quaternary circle size="small" title="在文件管理器中定位" aria-label="在文件管理器中定位" @click="revealPath(node.key)">
+            <template #icon><n-icon><FolderOpenOutline /></n-icon></template>
+          </n-button>
+        </div>
+      </n-scrollbar>
+      <small v-if="searchResults.length === 1000" class="search-limit">仅显示前 1000 个结果</small>
+    </div>
+    <div v-else class="tree-column-head">
+      <span>名称</span>
+      <span>大小</span>
+    </div>
+    <n-spin v-show="!searchText.trim()" :show="treeLoading" class="tree-spin">
+      <n-scrollbar class="tree-scrollbar" trigger="none">
+        <n-tree
+          :data="treeData"
+          :selected-keys="selectedKeys"
+          :node-props="nodeProps"
+          :render-prefix="renderPrefix"
+          :render-suffix="renderSuffix"
+          block-line
+          class="directory-tree"
+        >
+          <template #label="{option}">
+            <span class="tree-node-name" :class="{'tree-node-unreadable': !(option as TreeNode).readable}">{{ option.label }}</span>
+          </template>
+          <template #empty>
+            <div class="empty-state">
+              <div class="empty-icon"><n-icon><FolderOpenOutline /></n-icon></div>
+              <strong>{{ treeLoading ? "正在读取目录" : "没有目录内容" }}</strong>
+              <span>{{ treeLoading ? "大型目录可能需要一些时间" : "选择目录后，内容会显示在这里" }}</span>
+            </div>
+          </template>
+        </n-tree>
+      </n-scrollbar>
+    </n-spin>
+    <div v-if="!searchText.trim() && !isEmpty && incompleteCount" class="partial-notice">
+      <n-icon><LockClosedOutline /></n-icon>
+      <span>{{ incompleteCount }} 项无法完整读取，显示的目录大小可能低于实际值</span>
+    </div>
+    <TreeNodeContextMenu ref="treeNodeContextMenuRef" @select="selectMenu" />
+  </div>
 </template>
