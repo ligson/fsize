@@ -38,7 +38,7 @@ pnpm tauri build
 
 `.github/workflows/release.yml` 在推送 `v主版本.次版本.修订版本` 标签时启动。工作流会先校验标签、`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 和 `CHANGELOG.md` 条目一致，再在 Windows、macOS、Ubuntu 上并行构建 Tauri 安装包，并将构建产物和对应变更说明发布到 GitHub Release。仓库的 Actions 设置需允许工作流使用 `GITHUB_TOKEN` 写入 contents。
 
-发版前，先同步更新三个版本字段，补全 `CHANGELOG.md` 中该版本的日期与内容，并运行 `pnpm build` 和适用的 Cargo 检查。确认要发布后，提交发布相关改动，创建并推送版本标签，例如：
+发版前，先同步更新三个版本字段，补全 `CHANGELOG.md` 中该版本的日期与内容，并运行 `pnpm install --frozen-lockfile`、`pnpm build` 和适用的 Cargo 检查。`pnpm-workspace.yaml` 使用 `onlyBuiltDependencies` 明确允许需要安装期构建的依赖；若新增依赖要求运行安装脚本，先审阅后加入允许列表。确认要发布后，提交发布相关改动，创建并推送版本标签，例如：
 
 ```bash
 git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json CHANGELOG.md
