@@ -14,6 +14,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             commands::file_size::file_size,
+            commands::file_size::file_size_children,
+            commands::file_size::file_search,
             commands::file_open::open_folder,
             commands::file_open::reveal_path,
             commands::file_delete::file_delete,

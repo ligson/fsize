@@ -59,7 +59,14 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => ({
 const fileTree = ref<InstanceType<typeof FileTree> | null>(null);
 const currentPath = ref("");
 const stateMessage = ref("选择一个目录开始分析");
+const scanProgress = ref<{path: string; entriesScanned: number; elapsedMs: number} | null>(null);
 const settingsOpen = ref(false);
+
+const formatElapsed = (milliseconds: number) => {
+  const seconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(seconds / 60);
+  return minutes ? `${minutes}分${seconds % 60}秒` : `${seconds}秒`;
+};
 
 const selectDirectory = async () => {
   try {
@@ -81,6 +88,10 @@ const setTheme = (key: ThemeKey) => {
 onMounted(() => {
   eventBus.on("state-message", (event) => {
     stateMessage.value = event?.text ?? "";
+    scanProgress.value = null;
+  });
+  eventBus.on("scan-progress", (event) => {
+    scanProgress.value = event;
   });
 });
 </script>
@@ -148,7 +159,11 @@ onMounted(() => {
 
           <footer class="status-bar">
             <span class="status-dot" :class="{'status-busy': stateMessage.includes('正在')}"></span>
-            <span class="status-text">{{ stateMessage }}</span>
+            <span class="status-text" :class="{'status-text-scanning': scanProgress}" :title="stateMessage">{{ stateMessage }}</span>
+            <span v-if="scanProgress" class="status-scan-path" :title="scanProgress.path">{{ scanProgress.path }}</span>
+            <span v-if="scanProgress" class="status-scan-meta">
+              {{ scanProgress.entriesScanned.toLocaleString() }} 项 · {{ formatElapsed(scanProgress.elapsedMs) }}
+            </span>
             <span class="status-theme">{{ activePreset.name }}</span>
             <span class="status-version">v{{ packageInfo.version }}</span>
           </footer>

@@ -406,6 +406,20 @@ button {
   white-space: nowrap;
 }
 
+.tree-load-more {
+  padding: 0;
+  border: 0;
+  color: var(--app-accent);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.tree-load-more:disabled {
+  color: var(--app-text-muted);
+  cursor: default;
+}
+
 .tree-node-unreadable {
   color: var(--app-text-muted);
 }
@@ -500,9 +514,29 @@ button {
 }
 
 .status-text {
+  min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.status-text-scanning {
+  flex: 0 0 auto;
+}
+
+.status-scan-path {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-scan-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .status-theme {
