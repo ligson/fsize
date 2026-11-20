@@ -48,7 +48,24 @@ git push origin HEAD
 git push origin v0.3.0
 ```
 
-示例版本号应替换为本次发布版本；若还有其他发布必需文件，应一并审阅并加入提交。标签推送后，在 GitHub Actions 确认三平台构建完成，并检查 GitHub Releases 页面中的安装包和发布说明。macOS 构建当前未配置 Apple Developer 签名与公证，下载后的首次打开可能需要用户手动确认。
+示例版本号应替换为本次发布版本；若还有其他发布必需文件，应一并审阅并加入提交。标签推送后，在 GitHub Actions 确认三平台构建完成，并检查 GitHub Releases 页面中的安装包和发布说明。
+
+### macOS 签名与公证
+
+macOS 的“应用已损坏，无法打开”通常是 Gatekeeper 拒绝未签名或未公证的下载包。Release 工作流会读取下列 GitHub Actions Secrets；配置后，`tauri-apps/tauri-action` 会在 macOS runner 上签名并提交 Apple 公证：
+
+| Secret | 内容 |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Developer ID Application 证书导出的 base64 `.p12` 内容 |
+| `APPLE_CERTIFICATE_PASSWORD` | `.p12` 导出密码 |
+| `APPLE_SIGNING_IDENTITY` | `Developer ID Application: 你的名称 (TEAM_ID)` |
+| `APPLE_ID` | Apple Developer 账号邮箱 |
+| `APPLE_PASSWORD` | App 专用密码，不是 Apple ID 登录密码 |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+证书需要在 Apple Developer 账号中创建并从 macOS 钥匙串导出；App 专用密码在 Apple ID 账户中创建。不要把证书、密码或 App 专用密码写入仓库文件，全部放在 GitHub 仓库的 Settings → Secrets and variables → Actions 中。配置完成后重新发一个版本标签，旧的未签名包不会自动变成已签名包。
+
+临时打开已有的未签名包时，可以在 Finder 中右键应用选择“打开”并确认；若仍被隔离，可在终端执行 `xattr -dr com.apple.quarantine /Applications/fsize.app`，然后再次打开。这个操作只适用于你确认来源可信的安装包，正式分发应使用签名和公证包。
 
 只启动 Vite 浏览器预览服务：
 
@@ -58,6 +75,8 @@ pnpm preview
 ```
 
 纯浏览器模式下不具备完整的 Tauri 文件系统能力；验证文件选择、系统打开和删除操作时应使用 Tauri 桌面开发模式。
+
+应用启动时通过 GitHub Releases API 检查 `ligson/fsize` 的最新正式版本；设置抽屉中也可以手动检查。发现新版本后，界面只打开对应 Release 下载页，不会自动替换正在运行的应用。真正的后台自动安装需要 Tauri updater 公钥、签名更新包和对应的 GitHub Actions 发布产物，当前版本尚未配置这些密钥。
 
 目录扫描由 Rust 后端在后台线程执行。进程复用一个最多 4 个工作线程的 Rayon 线程池；当一个目录有至少 8 个直接子项时，并行读取文件元数据和递归处理子目录，小目录顺序处理以降低调度开销。文件节点直接通过目录项读取元数据，不再进入递归任务或重新构造路径。扫描期间每 250 毫秒至多发送一次当前目录和条目计数，前端状态栏独立更新耗时。扫描树保留在 Rust 后端会话缓存中，完成时只发送根节点和条目数摘要。前端展开目录时通过 `file_size_children` 每页读取 1000 项，超大目录用“加载更多”继续浏览；搜索通过 `file_search` 在后台线程执行，只返回最多 1000 个结果，避免主线程同步处理全量数据。
 

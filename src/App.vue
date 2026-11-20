@@ -7,6 +7,7 @@ import {
   NIcon,
 } from "naive-ui";
 import {open} from "@tauri-apps/plugin-dialog";
+import {openUrl} from "@tauri-apps/plugin-opener";
 import {FolderOpenOutline, RefreshOutline, SettingsOutline} from "@vicons/ionicons5";
 import FileTree from "./FileTree.vue";
 import {eventBus} from "./component/eventBus.ts";
@@ -61,11 +62,56 @@ const currentPath = ref("");
 const stateMessage = ref("选择一个目录开始分析");
 const scanProgress = ref<{path: string; entriesScanned: number; elapsedMs: number} | null>(null);
 const settingsOpen = ref(false);
+const updateChecking = ref(false);
+const latestRelease = ref<{version: string; url: string} | null>(null);
+const updateError = ref("");
+const updateStatus = ref("");
 
 const formatElapsed = (milliseconds: number) => {
   const seconds = Math.floor(milliseconds / 1000);
   const minutes = Math.floor(seconds / 60);
   return minutes ? `${minutes}分${seconds % 60}秒` : `${seconds}秒`;
+};
+
+const normalizeVersion = (version: string) => version.replace(/^v/, "").split("-")[0].split(".").map(part => Number.parseInt(part, 10) || 0);
+
+const isNewerVersion = (candidate: string, current: string) => {
+  const latest = normalizeVersion(candidate);
+  const installed = normalizeVersion(current);
+  for (let index = 0; index < 3; index += 1) {
+    if ((latest[index] ?? 0) !== (installed[index] ?? 0)) return (latest[index] ?? 0) > (installed[index] ?? 0);
+  }
+  return false;
+};
+
+const checkForUpdates = async () => {
+  if (updateChecking.value) return;
+  updateChecking.value = true;
+  updateError.value = "";
+  try {
+    const response = await fetch("https://api.github.com/repos/ligson/fsize/releases/latest", {
+      headers: {Accept: "application/vnd.github+json"}
+    });
+    if (!response.ok) throw new Error(`GitHub 返回 ${response.status}`);
+    const release = await response.json() as {tag_name?: string; html_url?: string; draft?: boolean; prerelease?: boolean};
+    if (!release.tag_name || !release.html_url || release.draft || release.prerelease) throw new Error("没有可用的正式版本");
+    if (isNewerVersion(release.tag_name, packageInfo.version)) {
+      latestRelease.value = {version: release.tag_name.replace(/^v/, ""), url: release.html_url};
+      updateStatus.value = `发现新版本 v${latestRelease.value.version}`;
+    } else {
+      latestRelease.value = null;
+      updateStatus.value = "当前已经是最新版本";
+    }
+  } catch (error) {
+    updateError.value = String(error);
+    updateStatus.value = "暂时无法检查更新，请稍后重试";
+  } finally {
+    updateChecking.value = false;
+  }
+};
+
+const openLatestRelease = async () => {
+  if (latestRelease.value) await openUrl(latestRelease.value.url);
 };
 
 const selectDirectory = async () => {
@@ -93,6 +139,7 @@ onMounted(() => {
   eventBus.on("scan-progress", (event) => {
     scanProgress.value = event;
   });
+  void checkForUpdates();
 });
 </script>
 
@@ -124,6 +171,10 @@ onMounted(() => {
           </header>
 
           <main class="workspace">
+            <div v-if="latestRelease" class="update-notice">
+              <span>发现新版本 v{{ latestRelease.version }}</span>
+              <n-button size="tiny" type="primary" @click="openLatestRelease">查看下载</n-button>
+            </div>
             <section class="location-bar">
               <div class="location-icon"><n-icon><FolderOpenOutline /></n-icon></div>
               <div class="location-copy">
@@ -194,6 +245,21 @@ onMounted(() => {
                     <span class="theme-swatch" :style="{background: preset.accent}"></span>
                   </button>
                 </div>
+              </div>
+              <div class="settings-section update-section">
+                <div class="settings-section-heading">
+                  <h2>更新</h2>
+                  <span>GitHub Releases</span>
+                </div>
+                <p v-if="latestRelease" class="update-copy">发现新版本 v{{ latestRelease.version }}</p>
+                <p v-else-if="updateError" class="update-copy">{{ updateStatus }}</p>
+                <p v-else-if="updateStatus" class="update-copy">{{ updateStatus }}</p>
+                <p v-else class="update-copy">当前版本 v{{ packageInfo.version }}</p>
+                <div class="update-actions">
+                  <n-button size="small" secondary :loading="updateChecking" @click="checkForUpdates()">检查更新</n-button>
+                  <n-button v-if="latestRelease" size="small" type="primary" @click="openLatestRelease">打开下载页</n-button>
+                </div>
+                <small class="update-hint">目前自动检查并打开下载页；自动安装需要配置 Tauri updater 签名。</small>
               </div>
             </n-drawer-content>
           </n-drawer>

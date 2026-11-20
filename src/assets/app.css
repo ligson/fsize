@@ -501,6 +501,33 @@ button {
   font-size: 10px;
 }
 
+.update-notice {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border: 1px solid var(--app-accent);
+  border-radius: 6px;
+  color: var(--app-text);
+  background: var(--app-accent-soft);
+  font-size: 11px;
+}
+
+.update-copy,
+.update-hint {
+  color: var(--app-text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.update-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .status-dot {
   width: 6px;
   height: 6px;

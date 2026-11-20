@@ -4,7 +4,7 @@
   <p>本地优先的跨平台目录空间分析工具</p>
 
   <p>
-    <img alt="版本 0.2.3" src="https://img.shields.io/badge/version-0.2.3-17836f?style=flat-square">
+    <img alt="版本 0.2.4" src="https://img.shields.io/badge/version-0.2.4-17836f?style=flat-square">
     <a href="https://github.com/ligson/fsize/releases/latest"><img alt="GitHub 最新版本" src="https://img.shields.io/github/v/release/ligson/fsize?style=flat-square"></a>
   </p>
 
@@ -22,7 +22,7 @@
 
 ## 项目状态
 
-当前版本为 **0.2.3**。目录扫描、文件搜索、系统文件管理器定位、批量删除与移动等核心流程均可使用。项目仍在持续完善中，欢迎通过 Issue 反馈问题和改进建议。
+当前版本为 **0.2.4**。目录扫描、文件搜索、系统文件管理器定位、批量删除与移动等核心流程均可使用。项目仍在持续完善中，欢迎通过 Issue 反馈问题和改进建议。
 
 ## 核心能力
 
@@ -35,6 +35,7 @@
 - **批量管理**：从目录树或搜索结果选择项目，批量删除或移动；移动不会覆盖目标目录中的同名项目。
 - **部分结果可见**：无权读取的条目仍显示在列表中；无法完整统计的目录会标记为部分结果，实际操作时再报告权限错误。
 - **桌面主题**：预置两种亮色和两种暗色主题，选择保存在本机；滚动条颜色随主题变化。
+- **版本更新**：启动时自动检查 GitHub 最新 Release，发现新版本后提示并打开下载页。
 
 扫描会跳过符号链接，不跟随链接遍历目标。文件大小按文件逻辑长度统计，不等于文件系统实际分配空间。扫描缓存只在当前应用会话中保留，刷新或重新扫描后重建；搜索结果最多显示 1000 条。删除目录会递归删除其全部内容，执行前会要求确认。
 
@@ -65,7 +66,7 @@ flowchart LR
 
 ## 下载
 
-从 [GitHub Releases](https://github.com/ligson/fsize/releases/latest) 下载适合平台的安装包。当前 Release 提供 Windows x64 安装程序、Linux x64 的 AppImage/deb/rpm，以及 macOS ARM64 安装包。macOS 构建暂未配置 Apple Developer 签名与公证。
+从 [GitHub Releases](https://github.com/ligson/fsize/releases/latest) 下载适合平台的安装包。当前 Release 提供 Windows x64 安装程序、Linux x64 的 AppImage/deb/rpm，以及 macOS ARM64 安装包。macOS 包只有在仓库配置 Apple Developer 签名与公证 Secrets 后才会被 Gatekeeper 直接信任，配置方法见[开发文档](docs/development.md#macos-签名与公证)。
 
 ## 快速开始
 
