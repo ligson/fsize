@@ -4,7 +4,7 @@
   <p>本地优先的跨平台目录空间分析工具</p>
 
   <p>
-    <img alt="版本 0.2.4" src="https://img.shields.io/badge/version-0.2.4-17836f?style=flat-square">
+    <img alt="版本 0.2.5" src="https://img.shields.io/badge/version-0.2.5-17836f?style=flat-square">
     <a href="https://github.com/ligson/fsize/releases/latest"><img alt="GitHub 最新版本" src="https://img.shields.io/github/v/release/ligson/fsize?style=flat-square"></a>
   </p>
 
@@ -22,7 +22,7 @@
 
 ## 项目状态
 
-当前版本为 **0.2.4**。目录扫描、文件搜索、系统文件管理器定位、批量删除与移动等核心流程均可使用。项目仍在持续完善中，欢迎通过 Issue 反馈问题和改进建议。
+当前版本为 **0.2.5**。目录扫描、文件搜索、系统文件管理器定位、批量删除与移动等核心流程均可使用。项目仍在持续完善中，欢迎通过 Issue 反馈问题和改进建议。
 
 ## 核心能力
 
